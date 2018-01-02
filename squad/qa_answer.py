@@ -150,7 +150,7 @@ def get_normalized_train_dir(train_dir):
     return global_train_dir
 
 
-def main(_):
+def main_old(_):
 
     vocab, rev_vocab = initialize_vocab(FLAGS.vocab_path)
 
@@ -189,6 +189,10 @@ def main(_):
         # write to json file to root dir
         with io.open('dev-prediction.json', 'w', encoding='utf-8') as f:
             f.write(unicode(json.dumps(answers, ensure_ascii=False)))
+
+
+def main(_):
+    pass
 
 
 if __name__ == "__main__":
