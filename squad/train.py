@@ -16,9 +16,10 @@ __author__ = 'Kensuke Muraki'
 _LOGGER = logging.getLogger(__name__)
 
 LARGE_VALUE = 100
+TRAIN_DIR = 'train'
 
 
-def load_data(data_dir):
+def load_data(data_dir, debug=False):
     data = {}
     prefixes = ['train', 'val']
     fields = ['ids.context', 'ids.question', 'span']
@@ -29,6 +30,8 @@ def load_data(data_dir):
             data[prefix][field] = []
             with open(os.path.join(data_dir, '{}.{}'.format(prefix, field)), 'r') as file_:
                 for line in file_:
+                    if debug and len(data[prefix][field]) >= 50:
+                        break
                     vals = [int(val) for val in line.strip().split()]
                     data[prefix][field].append(vals)
 
@@ -41,45 +44,99 @@ class QAModel(object):
         self.params = params
         self.graph = tf.Graph()
         with self.graph.as_default():
-            self.build_graph()
+            self._build_graph()
 
-    def fit(self, contexts, questions, context_lens, question_lens, answer_start_ids,
-            answer_end_ids, batch_size=10, epochs=10):
-        sample_num = len(contexts)
-        sample_ids = range(len(contexts))
+    def fit(self, train_data, valid_data, batch_size=10, epochs=10):
+        sample_num = len(train_data['contexts'])
+        sample_ids = range(len(train_data['contexts']))
 
         with tf.Session(graph=self.graph) as session:
             session.run(tf.global_variables_initializer())
+            summary_writer = tf.summary.FileWriter(
+                os.path.join(TRAIN_DIR, 'tensorboard.log'), session.graph)
 
             for epoch_id in range(epochs):
                 shuffle(sample_ids)
                 print('epoch_id={}'.format(epoch_id))
-                for batch_id in range(sample_num // batch_size):
-                    batch_sample_ids = sample_ids[
-                                       batch_id * batch_size: (batch_id + 1) * batch_size]
-                    batch = self.get_batch(batch_sample_ids, contexts, questions, context_lens,
-                                           question_lens, answer_start_ids, answer_end_ids)
-                    batch = self.add_paddings(batch)
-                    loss, _ = session.run(
-                        [self.loss, self.optimizer],
-                        feed_dict={self.contexts: batch[0], self.questions: batch[1],
-                                   self.context_lens: batch[2], self.question_lens: batch[3],
-                                   self.answer_start_ids: batch[4], self.answer_end_ids: batch[5]})
-                    print('batch_id={}, loss={}'.format(batch_id, loss))
+                train_loss, train_start_accuracy, train_end_accuracy = self._train_epoch(
+                    train_data, batch_size, sample_ids, sample_num, session)
 
-    def get_batch(self, sample_ids, contexts, questions, context_lens, question_lens,
-                  answer_start_ids, answer_end_ids):
+                print('Finished training epoch_id={}.'.format(epoch_id))
+                print('Train stats: loss={}, start_accuracy={}, end_accuracy={}'.format(
+                    train_loss, train_start_accuracy, train_end_accuracy))
+
+                # add train summary
+                summary_writer.add_summary(session.run(self.variable_summary), epoch_id)
+                summary_writer.add_summary(
+                    tf.summary.scalar('train_loss', train_loss).eval(), epoch_id)
+                summary_writer.add_summary(
+                    tf.summary.scalar(
+                        'train_start_accuracy', train_start_accuracy).eval(), epoch_id)
+                summary_writer.add_summary(
+                    tf.summary.scalar('train_end_accuracy', train_end_accuracy).eval(), epoch_id)
+
+                valid_loss, valid_start_accuracy, valid_end_accuracy = self._validate(
+                    valid_data, session)
+
+                print('Finished validation')
+                print('loss={}, start_accuracy={}, end_accuracy={}'.format(
+                    valid_loss, valid_start_accuracy, valid_end_accuracy))
+
+                # add validation summary
+                summary_writer.add_summary(
+                    tf.summary.scalar('valid_loss', valid_loss).eval(), epoch_id)
+                summary_writer.add_summary(
+                    tf.summary.scalar(
+                        'valid_start_accuracy', valid_start_accuracy).eval(), epoch_id)
+                summary_writer.add_summary(
+                    tf.summary.scalar('valid_end_accuracy', valid_end_accuracy).eval(), epoch_id)
+
+                # save the model
+                print('Saving the model...')
+                self.saver.save(session, os.path.join(TRAIN_DIR, 'model.ckpt'))
+
+    def _validate(self, valid_data, session):
+        batch = self._get_batch(range(len(valid_data['contexts'])), valid_data)
+        batch = self._add_paddings(batch)
+        loss, start_accuracy, end_accuracy, _ = session.run(
+            [self.loss, self.start_accuracy, self.end_accuracy, self.optimizer],
+            feed_dict={self.contexts: batch[0], self.questions: batch[1],
+                       self.context_lens: batch[2], self.question_lens: batch[3],
+                       self.answer_start_ids: batch[4], self.answer_end_ids: batch[5]})
+        return loss, start_accuracy, end_accuracy
+
+    def _train_epoch(self, train_data, batch_size, sample_ids, sample_num, session):
+        losses = []
+        start_accuracies = []
+        end_accuracies = []
+
+        for batch_id in range(sample_num // batch_size):
+            batch_sample_ids = sample_ids[batch_id * batch_size: (batch_id + 1) * batch_size]
+            batch = self._get_batch(batch_sample_ids, train_data)
+            batch = self._add_paddings(batch)
+            loss, start_accuracy, end_accuracy, _ = session.run(
+                [self.loss, self.start_accuracy, self.end_accuracy, self.optimizer],
+                feed_dict={self.contexts: batch[0], self.questions: batch[1],
+                           self.context_lens: batch[2], self.question_lens: batch[3],
+                           self.answer_start_ids: batch[4], self.answer_end_ids: batch[5]})
+            print('batch_id={}, loss={}'.format(batch_id, loss))
+            losses.append(loss)
+            start_accuracies.append(start_accuracy)
+            end_accuracies.append(end_accuracy)
+        return np.mean(losses), np.mean(start_accuracies), np.mean(end_accuracies)
+
+    def _get_batch(self, sample_ids, train_data):
         batch = [[] for _ in range(6)]
         for sample_id in sample_ids:
-            batch[0].append(contexts[sample_id])
-            batch[1].append(questions[sample_id])
-            batch[2].append(context_lens[sample_id])
-            batch[3].append(question_lens[sample_id])
-            batch[4].append(answer_start_ids[sample_id])
-            batch[5].append(answer_end_ids[sample_id])
+            batch[0].append(train_data['contexts'][sample_id])
+            batch[1].append(train_data['questions'][sample_id])
+            batch[2].append(train_data['context_lens'][sample_id])
+            batch[3].append(train_data['question_lens'][sample_id])
+            batch[4].append(train_data['answer_start_ids'][sample_id])
+            batch[5].append(train_data['answer_end_ids'][sample_id])
         return batch
 
-    def add_paddings(self, batch):
+    def _add_paddings(self, batch):
         for data_id in range(len(batch)):
             data = copy(batch[data_id])
             if not isinstance(data[0], list):
@@ -90,7 +147,7 @@ class QAModel(object):
             batch[data_id] = data
         return batch
 
-    def build_graph(self):
+    def _build_graph(self):
         with tf.variable_scope('inputs'):
             self.contexts = tf.placeholder(dtype=tf.int32, shape=(None, None), name='contexts')
             self.questions = tf.placeholder(dtype=tf.int32, shape=(None, None), name='questions')
@@ -180,14 +237,29 @@ class QAModel(object):
             self.optimizer = tf.train.AdamOptimizer(
                 learning_rate=self.params.learning_rate).minimize(self.loss)
 
-        with tf.name_scope('probability'):
+        with tf.name_scope('prediction'):
             self.start_probabilities = tf.nn.softmax(start_logits)
+            self.start_predictions = tf.argmax(self.start_probabilities, axis=1)
             self.end_probabilities = tf.nn.softmax(end_logits)
+            self.end_predictions = tf.argmax(self.end_probabilities, axis=1)
+            self.start_accuracy = tf.reduce_mean(
+                tf.cast(self.start_predictions == self.answer_start_ids, dtype=tf.float32))
+            self.end_accuracy = tf.reduce_mean(
+                tf.cast(self.end_predictions == self.answer_end_ids, dtype=tf.float32))
 
-        # TODO: log to tensorboard (and save the model)
+        with tf.name_scope('summary'):
+            for variable in tf.get_collection(tf.GraphKeys.TRAINABLE_VARIABLES):
+                tf.summary.histogram(variable.name, variable)
+            self.variable_summary = tf.summary.merge_all()
+
+        self.saver = tf.train.Saver()
+
+        # TODO: implement decoding
+        # TODO: implement metrics computation (accuracy (for both start/end), exact match, f1)
 
 
-def filter_data(data, max_context_len=400, max_question_len=30):
+# TODO: these numbers can be and should be tuned (define them as hyper-parameters)
+def filter_data(data, max_context_len=300, max_question_len=25):
     idx = 0
     while idx < len(data['ids.context']):
         if len(data['ids.context'][idx]) > max_context_len or \
@@ -200,26 +272,40 @@ def filter_data(data, max_context_len=400, max_question_len=30):
     return data
 
 
-def main():
-    data = load_data('data/squad')
-    data = filter_data(data['train'], max_context_len=30, max_question_len=10)
+def preprocess_data(data, filter=True):
+    if filter:
+        data = filter_data(data)
     context_lens = [len(context) for context in data['ids.context']]
     question_lens = [len(question) for question in data['ids.question']]
     answer_start_ids, answer_end_ids = zip(*data['span'])
+    data = {
+        'contexts': data['ids.context'],
+        'questions': data['ids.question'],
+        'context_lens': context_lens,
+        'question_lens': question_lens,
+        'answer_start_ids': answer_start_ids,
+        'answer_end_ids': answer_end_ids,
+    }
+    return data
+
+
+def main():
+    data = load_data('data/squad', debug=True)
+    train_data = preprocess_data(data['train'])
+    valid_data = preprocess_data(data['val'], filter=False)
     params = {
         'learning_rate': 0.001,
         'batch_size': 10,
-        'epochs': 100,
+        'epochs': 10,
         'state_size': 200,
         'embed_path': 'data/squad/glove.trimmed.100.npz',
     }
     Params = namedtuple(
-        'params', ['learning_rate', 'batch_size', 'epochs', 'state_size', 'embed_path'])
+        'params', params.keys())
     params = Params(**params)
     qa_model = QAModel(params)
     qa_model.fit(
-        data['ids.context'], data['ids.question'], context_lens, question_lens, answer_start_ids,
-        answer_end_ids, epochs=params.epochs, batch_size=params.batch_size)
+        train_data, valid_data, epochs=params.epochs, batch_size=params.batch_size)
 
 
 if __name__ == '__main__':
