@@ -59,21 +59,21 @@ class QAModel(object):
                 summary_writer.add_summary(
                     tf.summary.scalar('train_end_accuracy', train_end_accuracy).eval(), epoch_id)
 
-                valid_loss, valid_start_accuracy, valid_end_accuracy = self._validate(
+                valid_loss, valid_exact_match, valid_f1 = self._validate(
                     valid_data, session)
 
                 print('Finished validation')
-                print('loss={}, start_accuracy={}, end_accuracy={}'.format(
-                    valid_loss, valid_start_accuracy, valid_end_accuracy))
+                print('loss={}, exact_match={}, f1={}'.format(
+                    valid_loss, valid_exact_match, valid_f1))
 
                 # add validation summary
                 summary_writer.add_summary(
                     tf.summary.scalar('valid_loss', valid_loss).eval(), epoch_id)
                 summary_writer.add_summary(
                     tf.summary.scalar(
-                        'valid_start_accuracy', valid_start_accuracy).eval(), epoch_id)
+                        'valid_exact_match', valid_exact_match).eval(), epoch_id)
                 summary_writer.add_summary(
-                    tf.summary.scalar('valid_end_accuracy', valid_end_accuracy).eval(), epoch_id)
+                    tf.summary.scalar('valid_f1', valid_f1).eval(), epoch_id)
 
                 # save the model
                 print('Saving the model...')
@@ -82,12 +82,31 @@ class QAModel(object):
     def _validate(self, valid_data, session):
         batch = self._get_batch(range(len(valid_data['contexts'])), valid_data)
         batch = self._add_paddings(batch)
-        loss, start_accuracy, end_accuracy, _ = session.run(
-            [self.loss, self.start_accuracy, self.end_accuracy, self.optimizer],
+        loss, start_probabilities, end_probabilities, _ = session.run(
+            [self.loss, self.start_probabilities, self.end_probabilities, self.optimizer],
             feed_dict={self.contexts: batch[0], self.questions: batch[1],
                        self.context_lens: batch[2], self.question_lens: batch[3],
                        self.answer_start_ids: batch[4], self.answer_end_ids: batch[5]})
-        return loss, start_accuracy, end_accuracy
+        predictions = self.search(start_probabilities, end_probabilities)
+        exact_match, f1 = self.compute_metrics(predictions, batch[4], batch[5])
+        return loss, exact_match, f1
+
+    def compute_metrics(self, predictions, answer_start_ids, answer_end_ids):
+        exact_matches = []
+        f1 = []
+
+        for prediction, answer in zip(predictions, zip(answer_start_ids, answer_end_ids)):
+            exact_matches.append(int(prediction == answer))
+            prediction = set(range(prediction[0], prediction[1] + 1))
+            answer = set(range(answer[0], answer[1] + 1))
+            true_positive = float(len(prediction.intersection(answer)))
+            false_positive = float(len(prediction.difference(answer)))
+            false_negative = float(len(answer.difference(prediction)))
+            precision = true_positive / (true_positive + false_positive)
+            recall = true_positive / (true_positive + false_negative)
+            f1.append(2 * precision * recall / (precision + recall))
+
+        return np.mean(exact_matches), np.mean(f1)
 
     def _train_epoch(self, train_data, batch_size, sample_ids, sample_num, session):
         losses = []
@@ -130,6 +149,29 @@ class QAModel(object):
                 data[datum_id] = data[datum_id] + [0 for _ in range(max_len - len(data[datum_id]))]
             batch[data_id] = data
         return batch
+
+    def search(self, start_probabilities, end_probabilities, max_span=15):
+        context_len = len(start_probabilities)
+        predictions = []
+
+        for sample_id in range(context_len):
+            multiples = np.matmul(np.transpose(start_probabilities[sample_id: sample_id + 1]),
+                                  end_probabilities[sample_id: sample_id+1])
+            max_proba = 0.
+            max_start_id = None
+            max_end_id = None
+
+            for start_id in range(context_len):
+                for end_id in range(start_id, min(context_len, start_id + max_span)):
+                    proba = multiples[start_id, end_id]
+                    if proba > max_proba:
+                        max_proba = proba
+                        max_start_id = start_id
+                        max_end_id = end_id
+
+            predictions.append((max_start_id, max_end_id))
+
+        return predictions
 
     def _build_graph(self):
         with tf.variable_scope('inputs'):
@@ -237,6 +279,3 @@ class QAModel(object):
             self.variable_summary = tf.summary.merge_all()
 
         self.saver = tf.train.Saver()
-
-        # TODO: implement decoding
-        # TODO: implement metrics computation (accuracy (for both start/end), exact match, f1)
