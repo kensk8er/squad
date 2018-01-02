@@ -104,7 +104,11 @@ class QAModel(object):
             false_negative = float(len(answer.difference(prediction)))
             precision = true_positive / (true_positive + false_positive)
             recall = true_positive / (true_positive + false_negative)
-            f1.append(2 * precision * recall / (precision + recall))
+
+            if precision == 0. and recall == 0:
+                f1.append(0.)
+            else:
+                f1.append(2 * precision * recall / (precision + recall))
 
         return np.mean(exact_matches), np.mean(f1)
 
