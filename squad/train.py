@@ -239,13 +239,13 @@ class QAModel(object):
 
         with tf.name_scope('prediction'):
             self.start_probabilities = tf.nn.softmax(start_logits)
-            self.start_predictions = tf.argmax(self.start_probabilities, axis=1)
+            self.start_predictions = tf.cast(tf.argmax(self.start_probabilities, axis=1), tf.int32)
             self.end_probabilities = tf.nn.softmax(end_logits)
-            self.end_predictions = tf.argmax(self.end_probabilities, axis=1)
+            self.end_predictions = tf.cast(tf.argmax(self.end_probabilities, axis=1), tf.int32)
             self.start_accuracy = tf.reduce_mean(
-                tf.cast(self.start_predictions == self.answer_start_ids, dtype=tf.float32))
+                tf.cast(tf.equal(self.start_predictions, self.answer_start_ids), dtype=tf.float32))
             self.end_accuracy = tf.reduce_mean(
-                tf.cast(self.end_predictions == self.answer_end_ids, dtype=tf.float32))
+                tf.cast(tf.equal(self.end_predictions, self.answer_end_ids), dtype=tf.float32))
 
         with tf.name_scope('summary'):
             for variable in tf.get_collection(tf.GraphKeys.TRAINABLE_VARIABLES):
