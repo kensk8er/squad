@@ -114,25 +114,33 @@ class QAModel(object):
         return np.mean(losses), np.mean(exact_matches), np.mean(f1s)
 
     def compute_metrics(self, predictions, answer_start_ids, answer_end_ids):
+
+        def compute_f1(answer, f1, prediction):
+            true_positive = float(len(prediction.intersection(answer)))
+            false_positive = float(len(prediction.difference(answer)))
+            false_negative = float(len(answer.difference(prediction)))
+
+            if (true_positive + false_positive == 0.) or (true_positive + false_negative == 0.):
+                return 0.
+
+            precision = true_positive / (true_positive + false_positive)
+            recall = true_positive / (true_positive + false_negative)
+
+            if precision == 0. and recall == 0:
+                return 0.
+            else:
+                return 2 * precision * recall / (precision + recall)
+
         exact_matches = []
-        f1 = []
+        f1s = []
 
         for prediction, answer in zip(predictions, zip(answer_start_ids, answer_end_ids)):
             exact_matches.append(int(prediction == answer))
             prediction = set(range(prediction[0], prediction[1] + 1))
             answer = set(range(answer[0], answer[1] + 1))
-            true_positive = float(len(prediction.intersection(answer)))
-            false_positive = float(len(prediction.difference(answer)))
-            false_negative = float(len(answer.difference(prediction)))
-            precision = true_positive / (true_positive + false_positive)
-            recall = true_positive / (true_positive + false_negative)
+            f1s.append(compute_f1(answer, prediction))
 
-            if precision == 0. and recall == 0:
-                f1.append(0.)
-            else:
-                f1.append(2 * precision * recall / (precision + recall))
-
-        return np.mean(exact_matches), np.mean(f1)
+        return np.mean(exact_matches), np.mean(f1s)
 
     def _train_epoch(self, train_data, batch_size, sample_ids, sample_num, session):
         losses = []
