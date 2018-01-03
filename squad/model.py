@@ -29,6 +29,8 @@ class QAModel(object):
         self.graph = tf.Graph()
         with self.graph.as_default():
             self._build_graph()
+            _LOGGER.info('The number of parameters = {:,}'.format(
+                int(np.sum([np.prod(v.shape) for v in tf.trainable_variables()]))))
 
     def fit(self, train_data, valid_data, train_dir, batch_size=10, epochs=10):
         sample_num = len(train_data['contexts'])
