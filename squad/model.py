@@ -296,7 +296,7 @@ class QAModel(object):
                                     dtype=tf.float32)
             end_logits = tf.reshape(
                 tf.matmul(tf.reshape(contexts, (batch_size * max_context_len, -1)), w_end) + b_end,
-                (batch_size, max_context_len, 1))
+                (batch_size, max_context_len, -1))
             end_logits = tf.squeeze(end_logits, axis=2)
 
         with tf.variable_scope('loss'):
