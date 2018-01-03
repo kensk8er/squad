@@ -155,13 +155,14 @@ class QAModel(object):
             batch = self._get_batch(batch_sample_ids, train_data)
             batch = self._add_paddings(batch)
 
-            loss, start_accuracy, end_accuracy, _ = session.run(
-                [self.loss, self.start_accuracy, self.end_accuracy, self.optimizer],
+            loss, start_accuracy, end_accuracy, grad_norm, _ = session.run(
+                [self.loss, self.start_accuracy, self.end_accuracy, self.grad_norm, self.train_op],
                 feed_dict={self.contexts: batch[0], self.questions: batch[1],
                            self.context_lens: batch[2], self.question_lens: batch[3],
                            self.answer_start_ids: batch[4], self.answer_end_ids: batch[5]})
 
-            _LOGGER.info('Processed batch {}/{}, loss={}'.format(batch_id + 1, batch_num, loss))
+            _LOGGER.info('Processed batch {}/{}, loss={}, grad_norm={}'.format(
+                batch_id + 1, batch_num, loss, grad_norm))
             losses.append(loss)
             start_accuracies.append(start_accuracy)
             end_accuracies.append(end_accuracy)
@@ -309,8 +310,11 @@ class QAModel(object):
             self.loss = start_loss + end_loss
 
         with tf.variable_scope('optimizer'):
-            self.optimizer = tf.train.AdamOptimizer(
-                learning_rate=self.params.learning_rate).minimize(self.loss)
+            optimizer = tf.train.AdamOptimizer(learning_rate=self.params.learning_rate)
+            grads_and_vars = optimizer.compute_gradients(self.loss)
+            grads, _ = list(zip(*grads_and_vars))
+            self.train_op = optimizer.apply_gradients(grads_and_vars)
+            self.grad_norm = tf.global_norm(grads)
 
         with tf.variable_scope('prediction'):
             self.start_probabilities = tf.nn.softmax(start_logits)
