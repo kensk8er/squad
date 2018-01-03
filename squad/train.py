@@ -12,9 +12,9 @@ from squad.model import QAModel, HParams
 __author__ = 'Kensuke Muraki'
 
 tf.app.flags.DEFINE_float("learning_rate", 0.001, "Learning rate.")
-tf.app.flags.DEFINE_integer("batch_size", 10, "Batch size to use during training.")
+tf.app.flags.DEFINE_integer("batch_size", 32, "Batch size to use during training.")
 tf.app.flags.DEFINE_integer("epochs", 10, "Number of epochs to train.")
-tf.app.flags.DEFINE_integer("state_size", 200, "Size of each model layer.")
+tf.app.flags.DEFINE_integer("state_size", 128, "Size of each model layer.")
 tf.app.flags.DEFINE_string("data_dir", "data/squad", "SQuAD directory")
 tf.app.flags.DEFINE_string(
     "train_dir", "train", "Training directory to save the model parameters./train).")

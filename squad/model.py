@@ -118,20 +118,24 @@ class QAModel(object):
         losses = []
         start_accuracies = []
         end_accuracies = []
+        batch_num = sample_num // batch_size
 
-        for batch_id in range(sample_num // batch_size):
+        for batch_id in range(batch_num):
             batch_sample_ids = sample_ids[batch_id * batch_size: (batch_id + 1) * batch_size]
             batch = self._get_batch(batch_sample_ids, train_data)
             batch = self._add_paddings(batch)
+
             loss, start_accuracy, end_accuracy, _ = session.run(
                 [self.loss, self.start_accuracy, self.end_accuracy, self.optimizer],
                 feed_dict={self.contexts: batch[0], self.questions: batch[1],
                            self.context_lens: batch[2], self.question_lens: batch[3],
                            self.answer_start_ids: batch[4], self.answer_end_ids: batch[5]})
-            _LOGGER.info('batch_id={}, loss={}'.format(batch_id, loss))
+
+            _LOGGER.info('Processed batch {}/{}, loss={}'.format(batch_id + 1, batch_num, loss))
             losses.append(loss)
             start_accuracies.append(start_accuracy)
             end_accuracies.append(end_accuracy)
+
         return np.mean(losses), np.mean(start_accuracies), np.mean(end_accuracies)
 
     def _get_batch(self, sample_ids, train_data):
