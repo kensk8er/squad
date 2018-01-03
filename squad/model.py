@@ -100,8 +100,8 @@ class QAModel(object):
             batch = self._get_batch(batch_sample_ids, valid_data)
             batch = self._add_paddings(batch)
 
-            loss, start_probabilities, end_probabilities, _ = session.run(
-                [self.loss, self.start_probabilities, self.end_probabilities, self.optimizer],
+            loss, start_probabilities, end_probabilities = session.run(
+                [self.loss, self.start_probabilities, self.end_probabilities],
                 feed_dict={self.contexts: batch[0], self.questions: batch[1],
                            self.context_lens: batch[2], self.question_lens: batch[3],
                            self.answer_start_ids: batch[4], self.answer_end_ids: batch[5]})
