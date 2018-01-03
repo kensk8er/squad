@@ -49,7 +49,8 @@ class QAModel(object):
                 _LOGGER.info('Train stats: loss={}, start_accuracy={}, end_accuracy={}\n'.format(
                     train_loss, train_start_accuracy, train_end_accuracy))
 
-                valid_loss, valid_exact_match, valid_f1 = self._validate(valid_data, session)
+                valid_loss, valid_exact_match, valid_f1 = self._validate(
+                    valid_data, batch_size, session)
 
                 _LOGGER.info('Finished validation.')
                 _LOGGER.info('Validation stats: loss={}, exact_match={}, f1={}\n'.format(
@@ -81,17 +82,33 @@ class QAModel(object):
 
         summary_writer.add_summary(metric_summary, global_step=epoch_id)
 
-    def _validate(self, valid_data, session):
-        batch = self._get_batch(range(len(valid_data['contexts'])), valid_data)
-        batch = self._add_paddings(batch)
-        loss, start_probabilities, end_probabilities, _ = session.run(
-            [self.loss, self.start_probabilities, self.end_probabilities, self.optimizer],
-            feed_dict={self.contexts: batch[0], self.questions: batch[1],
-                       self.context_lens: batch[2], self.question_lens: batch[3],
-                       self.answer_start_ids: batch[4], self.answer_end_ids: batch[5]})
-        predictions = self.search(start_probabilities, end_probabilities)
-        exact_match, f1 = self.compute_metrics(predictions, batch[4], batch[5])
-        return loss, exact_match, f1
+    def _validate(self, valid_data, batch_size, session):
+        sample_num = len(valid_data['contexts'])
+        batch_num = sample_num // batch_size
+        sample_ids = range(sample_num)
+        losses = []
+        exact_matches = []
+        f1s = []
+
+        for batch_id in range(batch_num):
+            batch_sample_ids = sample_ids[batch_id * batch_size: (batch_id + 1) * batch_size]
+            batch = self._get_batch(batch_sample_ids, valid_data)
+            batch = self._add_paddings(batch)
+
+            loss, start_probabilities, end_probabilities, _ = session.run(
+                [self.loss, self.start_probabilities, self.end_probabilities, self.optimizer],
+                feed_dict={self.contexts: batch[0], self.questions: batch[1],
+                           self.context_lens: batch[2], self.question_lens: batch[3],
+                           self.answer_start_ids: batch[4], self.answer_end_ids: batch[5]})
+
+            predictions = self.search(start_probabilities, end_probabilities)
+            exact_match, f1 = self.compute_metrics(predictions, batch[4], batch[5])
+
+            losses.append(loss)
+            exact_matches.append(exact_match)
+            f1s.append(f1)
+
+        return np.mean(losses), np.mean(exact_matches), np.mean(f1s)
 
     def compute_metrics(self, predictions, answer_start_ids, answer_end_ids):
         exact_matches = []
