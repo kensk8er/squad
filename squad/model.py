@@ -248,19 +248,28 @@ class QAModel(object):
             questions = tf.concat(questions, axis=2)
 
         with tf.variable_scope('match-lstm'):
-            decoder_cell = tf.nn.rnn_cell.LSTMCell(num_units=self.params.state_size * 2)
+            # attention mechanism
             attention_mechanism = tf.contrib.seq2seq.LuongAttention(
-                num_units=self.params.state_size * 2, memory=questions,
+                num_units=self.params.state_size, memory=questions,
                 memory_sequence_length=self.question_lens)
+
+            # forward decoder
+            fw_decoder_cell = tf.nn.rnn_cell.LSTMCell(num_units=self.params.state_size)
             fw_decoder_cell = tf.contrib.seq2seq.AttentionWrapper(
-                cell=decoder_cell, attention_mechanism=attention_mechanism,
-                attention_layer_size=self.params.state_size * 2)
+                cell=fw_decoder_cell, attention_mechanism=attention_mechanism,
+                attention_layer_size=self.params.state_size)
+
+            # backward decoder
+            bw_decoder_cell = tf.nn.rnn_cell.LSTMCell(num_units=self.params.state_size)
             bw_decoder_cell = tf.contrib.seq2seq.AttentionWrapper(
-                cell=decoder_cell, attention_mechanism=attention_mechanism,
-                attention_layer_size=self.params.state_size * 2)
+                cell=bw_decoder_cell, attention_mechanism=attention_mechanism,
+                attention_layer_size=self.params.state_size)
+
+            # decoding with attention
             contexts, _ = tf.nn.bidirectional_dynamic_rnn(
                 fw_decoder_cell, bw_decoder_cell, contexts, sequence_length=self.context_lens,
-                dtype=tf.float32)
+                dtype=tf.float32, scope='bidirectional_rnn')
+
             contexts = tf.concat(contexts, axis=2)
 
         with tf.variable_scope('answer-pointer'):
@@ -270,7 +279,7 @@ class QAModel(object):
             max_context_len = context_shape[1]
 
             # for answer start pointer
-            w_start = tf.get_variable('W_start', shape=(self.params.state_size * 4, 1),
+            w_start = tf.get_variable('W_start', shape=(self.params.state_size * 2, 1),
                                       initializer=xavier_initializer(), dtype=tf.float32)
             b_start = tf.get_variable('b_start', shape=(1,), initializer=tf.zeros_initializer(),
                                       dtype=tf.float32)
@@ -280,7 +289,7 @@ class QAModel(object):
             start_logits = tf.squeeze(start_logits, axis=2)
 
             # for answer end pointer
-            w_end = tf.get_variable('W_end', shape=(self.params.state_size * 4, 1),
+            w_end = tf.get_variable('W_end', shape=(self.params.state_size * 2, 1),
                                     initializer=xavier_initializer(), dtype=tf.float32)
             b_end = tf.get_variable('b_end', shape=(1,), initializer=tf.zeros_initializer(),
                                     dtype=tf.float32)
