@@ -41,43 +41,45 @@ class QAModel(object):
 
             for epoch_id in range(epochs):
                 shuffle(sample_ids)
-                print('epoch_id={}'.format(epoch_id))
+                _LOGGER.info('--- Start epoch_id={} ---'.format(epoch_id))
                 train_loss, train_start_accuracy, train_end_accuracy = self._train_epoch(
                     train_data, batch_size, sample_ids, sample_num, session)
 
-                print('Finished training epoch_id={}.'.format(epoch_id))
-                print('Train stats: loss={}, start_accuracy={}, end_accuracy={}'.format(
+                _LOGGER.info('Finished training epoch_id={}.\n'.format(epoch_id))
+                _LOGGER.info('Train stats: loss={}, start_accuracy={}, end_accuracy={}\n'.format(
                     train_loss, train_start_accuracy, train_end_accuracy))
 
-                # add train summary
-                summary_writer.add_summary(session.run(self.variable_summary), epoch_id)
-                summary_writer.add_summary(
-                    tf.summary.scalar('train_loss', train_loss).eval(), epoch_id)
-                summary_writer.add_summary(
-                    tf.summary.scalar(
-                        'train_start_accuracy', train_start_accuracy).eval(), epoch_id)
-                summary_writer.add_summary(
-                    tf.summary.scalar('train_end_accuracy', train_end_accuracy).eval(), epoch_id)
+                valid_loss, valid_exact_match, valid_f1 = self._validate(valid_data, session)
 
-                valid_loss, valid_exact_match, valid_f1 = self._validate(
-                    valid_data, session)
-
-                print('Finished validation')
-                print('loss={}, exact_match={}, f1={}'.format(
+                _LOGGER.info('Finished validation.')
+                _LOGGER.info('Validation stats: loss={}, exact_match={}, f1={}\n'.format(
                     valid_loss, valid_exact_match, valid_f1))
 
-                # add validation summary
-                summary_writer.add_summary(
-                    tf.summary.scalar('valid_loss', valid_loss).eval(), epoch_id)
-                summary_writer.add_summary(
-                    tf.summary.scalar(
-                        'valid_exact_match', valid_exact_match).eval(), epoch_id)
-                summary_writer.add_summary(
-                    tf.summary.scalar('valid_f1', valid_f1).eval(), epoch_id)
+                self._add_summary(epoch_id, session, summary_writer, train_end_accuracy, train_loss,
+                                  train_start_accuracy, valid_exact_match, valid_f1, valid_loss)
 
                 # save the model
-                print('Saving the model...')
+                _LOGGER.info('Saving the model...')
                 self.saver.save(session, os.path.join(train_dir, 'model.ckpt'))
+
+    def _add_summary(self, epoch_id, session, summary_writer, train_end_accuracy, train_loss,
+                     train_start_accuracy, valid_exact_match, valid_f1, valid_loss):
+        # add histogram summary of variables
+        summary_writer.add_summary(session.run(self.variable_summary), epoch_id)
+
+        metric_summary = tf.Summary()
+
+        # add train summary
+        metric_summary.value.add(tag='train_loss', simple_value=train_loss)
+        metric_summary.value.add(tag='train_start_accuracy', simple_value=train_start_accuracy)
+        metric_summary.value.add(tag='train_end_accuracy', simple_value=train_end_accuracy)
+
+        # add validation summary
+        metric_summary.value.add(tag='valid_loss', simple_value=valid_loss)
+        metric_summary.value.add(tag='valid_exact_match', simple_value=valid_exact_match)
+        metric_summary.value.add(tag='valid_f1', simple_value=valid_f1)
+
+        summary_writer.add_summary(metric_summary, global_step=epoch_id)
 
     def _validate(self, valid_data, session):
         batch = self._get_batch(range(len(valid_data['contexts'])), valid_data)
@@ -126,7 +128,7 @@ class QAModel(object):
                 feed_dict={self.contexts: batch[0], self.questions: batch[1],
                            self.context_lens: batch[2], self.question_lens: batch[3],
                            self.answer_start_ids: batch[4], self.answer_end_ids: batch[5]})
-            print('batch_id={}, loss={}'.format(batch_id, loss))
+            _LOGGER.info('batch_id={}, loss={}'.format(batch_id, loss))
             losses.append(loss)
             start_accuracies.append(start_accuracy)
             end_accuracies.append(end_accuracy)
@@ -253,7 +255,7 @@ class QAModel(object):
                 (batch_size, max_context_len, 1))
             end_logits = tf.squeeze(end_logits, axis=2)
 
-        with tf.name_scope('loss'):
+        with tf.variable_scope('loss'):
             # add large values to valid logits so that softmax are near accurate even with paddings
             start_logits = start_logits + tf.multiply(
                 tf.sequence_mask(self.context_lens, dtype=tf.float32), self.params.large_value)
@@ -263,11 +265,11 @@ class QAModel(object):
             end_loss = tf.losses.sparse_softmax_cross_entropy(self.answer_end_ids, end_logits)
             self.loss = start_loss + end_loss
 
-        with tf.name_scope('optimizer'):
+        with tf.variable_scope('optimizer'):
             self.optimizer = tf.train.AdamOptimizer(
                 learning_rate=self.params.learning_rate).minimize(self.loss)
 
-        with tf.name_scope('prediction'):
+        with tf.variable_scope('prediction'):
             self.start_probabilities = tf.nn.softmax(start_logits)
             self.start_predictions = tf.cast(tf.argmax(self.start_probabilities, axis=1), tf.int32)
             self.end_probabilities = tf.nn.softmax(end_logits)
@@ -277,9 +279,9 @@ class QAModel(object):
             self.end_accuracy = tf.reduce_mean(
                 tf.cast(tf.equal(self.end_predictions, self.answer_end_ids), dtype=tf.float32))
 
-        with tf.name_scope('summary'):
-            for variable in tf.get_collection(tf.GraphKeys.TRAINABLE_VARIABLES):
-                tf.summary.histogram(variable.name, variable)
-            self.variable_summary = tf.summary.merge_all()
+        # create summary
+        for variable in tf.get_collection(tf.GraphKeys.TRAINABLE_VARIABLES):
+            tf.summary.histogram(variable.name, variable)
+        self.variable_summary = tf.summary.merge_all()
 
         self.saver = tf.train.Saver()

@@ -3,6 +3,7 @@
 
 """
 import os
+import logging
 
 import tensorflow as tf
 
@@ -108,4 +109,5 @@ def main(_):
 
 
 if __name__ == '__main__':
+    logging.basicConfig(level=logging.INFO)
     tf.app.run()
