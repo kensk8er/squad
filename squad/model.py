@@ -115,7 +115,7 @@ class QAModel(object):
 
     def compute_metrics(self, predictions, answer_start_ids, answer_end_ids):
 
-        def compute_f1(answer, f1, prediction):
+        def compute_f1(answer, prediction):
             true_positive = float(len(prediction.intersection(answer)))
             false_positive = float(len(prediction.difference(answer)))
             false_negative = float(len(answer.difference(prediction)))
