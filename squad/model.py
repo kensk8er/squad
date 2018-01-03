@@ -33,6 +33,7 @@ class QAModel(object):
     def fit(self, train_data, valid_data, train_dir, batch_size=10, epochs=10):
         sample_num = len(train_data['contexts'])
         sample_ids = range(len(train_data['contexts']))
+        best_f1 = 0.
 
         with tf.Session(graph=self.graph) as session:
             session.run(tf.global_variables_initializer())
@@ -59,9 +60,11 @@ class QAModel(object):
                 self._add_summary(epoch_id, session, summary_writer, train_end_accuracy, train_loss,
                                   train_start_accuracy, valid_exact_match, valid_f1, valid_loss)
 
-                # save the model
-                _LOGGER.info('Saving the model...')
-                self.saver.save(session, os.path.join(train_dir, 'model.ckpt'))
+                # save the model if get the best f1 score so far
+                if valid_f1 > best_f1:
+                    best_f1 = valid_f1
+                    _LOGGER.info('Achieved the best f1 score so far. Saving the model...')
+                    self.saver.save(session, os.path.join(train_dir, 'model.ckpt'))
 
     def _add_summary(self, epoch_id, session, summary_writer, train_end_accuracy, train_loss,
                      train_start_accuracy, valid_exact_match, valid_f1, valid_loss):
