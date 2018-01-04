@@ -69,9 +69,6 @@ class QAModel(object):
 
     def _add_summary(self, epoch_id, session, summary_writer, train_end_accuracy, train_loss,
                      train_start_accuracy, valid_exact_match, valid_f1, valid_loss):
-        # add histogram summary of variables
-        summary_writer.add_summary(session.run(self.variable_summary), epoch_id)
-
         metric_summary = tf.Summary()
 
         # add train summary
@@ -85,6 +82,9 @@ class QAModel(object):
         metric_summary.value.add(tag='valid_f1', simple_value=valid_f1)
 
         summary_writer.add_summary(metric_summary, global_step=epoch_id)
+
+        # add histogram summary of variables
+        summary_writer.add_summary(session.run(self.variable_summary), epoch_id)
 
     def _validate(self, valid_data, batch_size, session):
         sample_num = len(valid_data['contexts'])
