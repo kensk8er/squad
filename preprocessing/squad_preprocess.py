@@ -1,3 +1,4 @@
+# coding=utf-8
 from __future__ import print_function
 import argparse
 import json
@@ -77,23 +78,31 @@ def list_topics(data):
 
 
 def tokenize(sequence):
+    import re
+    sequence = re.sub(ur'(\w|\(\.)([-\u2013\u2014])(\w|\)|\.)', ur'\1 \2 \3', sequence)
+    sequence = re.sub(ur"'(\w\w\w)", ur"' \1", sequence)
+    sequence = re.sub(ur'\*(\w)', ur'* \1', sequence)
     tokens = [token.replace("``", '"').replace("''", '"') for token in nltk.word_tokenize(sequence)]
-    return map(lambda x:x.encode('utf8'), tokens)
+    abbreviations = ['Jr', 'Sr', 'Co', 'Inc', 'D.C', 'A.D', 'I.D', 'etc', 'U.S', 'W.E', 'Bol']
+    if len(tokens) > 1 and tokens[-2] in abbreviations and tokens[-1] == '.':
+        tokens[-2] = tokens[-2] + tokens[-1]
+        tokens.pop()
+    return tokens
 
 
 def token_idx_map(context, context_tokens):
-    acc = ''
+    acc = u''
     current_token_idx = 0
     token_map = dict()
 
     for char_idx, char in enumerate(context):
-        if char != u' ':
+        if char not in [u' ', u'\n', u'　', u'\u202f', u'\u2009']:
             acc += char
             context_token = unicode(context_tokens[current_token_idx])
             if acc == context_token:
                 syn_start = char_idx - len(acc) + 1
                 token_map[syn_start] = [acc, current_token_idx]
-                acc = ''
+                acc = u''
                 current_token_idx += 1
     return token_map
 
@@ -107,7 +116,8 @@ def read_write_dataset(dataset, tier, prefix):
     and answer pointer in their own file. Returns the number
     of questions and answers processed for the dataset"""
     qn, an = 0, 0
-    skipped = 0
+    skipped_a = 0
+    skipped_q = 0
 
     with open(os.path.join(prefix, tier +'.context'), 'w') as context_file,  \
          open(os.path.join(prefix, tier +'.question'), 'w') as question_file,\
@@ -132,9 +142,10 @@ def read_write_dataset(dataset, tier, prefix):
                     question_tokens = tokenize(question)
 
                     answers = qas[qid]['answers']
-                    qn += 1
 
-                    num_answers = range(1)
+                    num_answers = range(len(answers))
+                    text_answers = []
+                    span_answers = []
 
                     for ans_id in num_answers:
                         # it contains answer_start, text
@@ -151,22 +162,27 @@ def read_write_dataset(dataset, tier, prefix):
 
                         try:
                             a_start_idx = answer_map[answer_start][1]
-
                             a_end_idx = answer_map[answer_end - last_word_answer][1]
-
-                            # remove length restraint since we deal with it later
-                            context_file.write(' '.join(context_tokens) + '\n')
-                            question_file.write(' '.join(question_tokens) + '\n')
-                            text_file.write(' '.join(text_tokens) + '\n')
-                            span_file.write(' '.join([str(a_start_idx), str(a_end_idx)]) + '\n')
+                            text_answers.append(' '.join(text_tokens).encode('utf8'))
+                            span_answers.append(' '.join([str(a_start_idx), str(a_end_idx)]))
 
                         except Exception as e:
-                            skipped += 1
+                            skipped_a += 1
 
                         an += 1
 
-    print("Skipped {} question/answer pairs in {}".format(skipped, tier))
-    return qn,an
+                    if text_answers:
+                        # remove length restraint since we deal with it later
+                        context_file.write(' '.join(context_tokens) + '\n')
+                        question_file.write(' '.join(question_tokens) + '\n')
+                        text_file.write('\t'.join(text_answers) + '\n')
+                        span_file.write('\t'.join(span_answers) + '\n')
+                        qn += 1
+                    else:
+                        skipped_q += 1
+
+    print("Skipped {} question and {} answers in {}".format(skipped_q, skipped_a, tier))
+    return qn, an
 
 
 def save_files(prefix, tier, indices):
@@ -224,20 +240,20 @@ if __name__ == '__main__':
 
     # In train we have 87k+ questions, and one answer per question.
     # The answer start range is also indicated
+    #
+    # # # 1. Split train into train and validation into 95-5
+    # # # 2. Shuffle train, validation
+    # # print("Splitting the dataset into train and validation")
+    # # split_tier(data_prefix, 0.95, shuffle=True)
 
-    # 1. Split train into train and validation into 95-5
-    # 2. Shuffle train, validation
-    print("Splitting the dataset into train and validation")
-    split_tier(data_prefix, 0.95, shuffle=True)
-
-    print("Processed {} questions and {} answers in train".format(train_num_questions, train_num_answers))
+    print("Created {} questions and {} answers in train".format(train_num_questions, train_num_answers))
 
     print("Downloading {}".format(dev_filename))
     dev_dataset = maybe_download(squad_base_url, dev_filename, download_prefix, 4854279L)
 
     # In dev, we have 10k+ questions, and around 3 answers per question (totaling
     # around 34k+ answers).
-    # dev_data = data_from_json(os.path.join(download_prefix, dev_filename))
-    # list_topics(dev_data)
-    # dev_num_questions, dev_num_answers = read_write_dataset(dev_data, 'dev', data_prefix)
-    # print("Processed {} questions and {} answers in dev".format(dev_num_questions, dev_num_answers))
+    dev_data = data_from_json(os.path.join(download_prefix, dev_filename))
+    list_topics(dev_data)
+    dev_num_questions, dev_num_answers = read_write_dataset(dev_data, 'dev', data_prefix)
+    print("Created {} questions and {} answers in dev".format(dev_num_questions, dev_num_answers))

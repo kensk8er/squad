@@ -51,15 +51,14 @@ class QAModel(object):
                 _LOGGER.info('Train stats: loss={}, start_accuracy={}, end_accuracy={}\n'.format(
                     train_loss, train_start_accuracy, train_end_accuracy))
 
-                valid_loss, valid_exact_match, valid_f1 = self._validate(
-                    valid_data, batch_size, session)
+                valid_exact_match, valid_f1 = self._validate(valid_data, batch_size, session)
 
                 _LOGGER.info('Finished validation.')
-                _LOGGER.info('Validation stats: loss={}, exact_match={}, f1={}\n'.format(
-                    valid_loss, valid_exact_match, valid_f1))
+                _LOGGER.info('Validation stats: exact_match={}, f1={}\n'.format(
+                    valid_exact_match, valid_f1))
 
                 self._add_summary(epoch_id, session, summary_writer, train_end_accuracy, train_loss,
-                                  train_start_accuracy, valid_exact_match, valid_f1, valid_loss)
+                                  train_start_accuracy, valid_exact_match, valid_f1)
 
                 # save the model if get the best f1 score so far
                 if valid_f1 > best_f1:
@@ -68,7 +67,7 @@ class QAModel(object):
                     self.saver.save(session, os.path.join(train_dir, 'model.ckpt'))
 
     def _add_summary(self, epoch_id, session, summary_writer, train_end_accuracy, train_loss,
-                     train_start_accuracy, valid_exact_match, valid_f1, valid_loss):
+                     train_start_accuracy, valid_exact_match, valid_f1):
         metric_summary = tf.Summary()
 
         # add train summary
@@ -77,7 +76,6 @@ class QAModel(object):
         metric_summary.value.add(tag='train_end_accuracy', simple_value=train_end_accuracy)
 
         # add validation summary
-        metric_summary.value.add(tag='valid_loss', simple_value=valid_loss)
         metric_summary.value.add(tag='valid_exact_match', simple_value=valid_exact_match)
         metric_summary.value.add(tag='valid_f1', simple_value=valid_f1)
 
@@ -90,7 +88,6 @@ class QAModel(object):
         sample_num = len(valid_data['contexts'])
         batch_num = sample_num // batch_size
         sample_ids = range(sample_num)
-        losses = []
         exact_matches = []
         f1s = []
 
@@ -99,22 +96,20 @@ class QAModel(object):
             batch = self._get_batch(batch_sample_ids, valid_data)
             batch = self._add_paddings(batch)
 
-            loss, start_probabilities, end_probabilities = session.run(
-                [self.loss, self.start_probabilities, self.end_probabilities],
+            start_probabilities, end_probabilities = session.run(
+                [self.start_probabilities, self.end_probabilities],
                 feed_dict={self.contexts: batch[0], self.questions: batch[1],
-                           self.context_lens: batch[2], self.question_lens: batch[3],
-                           self.answer_start_ids: batch[4], self.answer_end_ids: batch[5]})
+                           self.context_lens: batch[2], self.question_lens: batch[3]})
 
             predictions = self.search(start_probabilities, end_probabilities)
-            exact_match, f1 = self.compute_metrics(predictions, batch[4], batch[5])
+            exact_match, f1 = self.compute_metrics(predictions, valid_data['spans'])
 
-            losses.append(loss)
             exact_matches.append(exact_match)
             f1s.append(f1)
 
-        return np.mean(losses), np.mean(exact_matches), np.mean(f1s)
+        return np.mean(exact_matches), np.mean(f1s)
 
-    def compute_metrics(self, predictions, answer_start_ids, answer_end_ids):
+    def compute_metrics(self, predictions, answer_tuples):
 
         def compute_f1(answer, prediction):
             true_positive = float(len(prediction.intersection(answer)))
@@ -135,11 +130,20 @@ class QAModel(object):
         exact_matches = []
         f1s = []
 
-        for prediction, answer in zip(predictions, zip(answer_start_ids, answer_end_ids)):
-            exact_matches.append(int(prediction == answer))
-            prediction = set(range(prediction[0], prediction[1] + 1))
-            answer = set(range(answer[0], answer[1] + 1))
-            f1s.append(compute_f1(answer, prediction))
+        for prediction, answers in zip(predictions, answer_tuples):
+            prediction_set = set(range(prediction[0], prediction[1] + 1))
+            best_exact_match = 0
+            best_f1 = 0.
+
+            for answer in answers:
+                exact_match = int(prediction == tuple(answer))
+                best_exact_match = max(exact_match, best_exact_match)
+                answer_set = set(range(answer[0], answer[1] + 1))
+                f1 = compute_f1(answer_set, prediction_set)
+                best_f1 = max(f1, best_f1)
+
+            exact_matches.append(best_exact_match)
+            f1s.append(best_f1)
 
         return np.mean(exact_matches), np.mean(f1s)
 
@@ -154,8 +158,9 @@ class QAModel(object):
             batch = self._get_batch(batch_sample_ids, train_data)
             batch = self._add_paddings(batch)
 
-            loss, start_accuracy, end_accuracy, grad_norm, _ = session.run(
-                [self.loss, self.start_accuracy, self.end_accuracy, self.grad_norm, self.train_op],
+            loss, start_accuracy, end_accuracy, grad_norm, _, grad2norm = session.run(
+                [self.loss, self.start_accuracy, self.end_accuracy, self.grad_norm, self.train_op,
+                 self.grad2norm],
                 feed_dict={self.contexts: batch[0], self.questions: batch[1],
                            self.context_lens: batch[2], self.question_lens: batch[3],
                            self.answer_start_ids: batch[4], self.answer_end_ids: batch[5]})
@@ -168,15 +173,22 @@ class QAModel(object):
 
         return np.mean(losses), np.mean(start_accuracies), np.mean(end_accuracies)
 
-    def _get_batch(self, sample_ids, train_data):
-        batch = [[] for _ in range(6)]
+    def _get_batch(self, sample_ids, data):
+        if 'answer_start_ids' in data:
+            batch = [[] for _ in range(6)]
+        else:
+            batch = [[] for _ in range(4)]
+
         for sample_id in sample_ids:
-            batch[0].append(train_data['contexts'][sample_id])
-            batch[1].append(train_data['questions'][sample_id])
-            batch[2].append(train_data['context_lens'][sample_id])
-            batch[3].append(train_data['question_lens'][sample_id])
-            batch[4].append(train_data['answer_start_ids'][sample_id])
-            batch[5].append(train_data['answer_end_ids'][sample_id])
+            batch[0].append(data['contexts'][sample_id])
+            batch[1].append(data['questions'][sample_id])
+            batch[2].append(data['context_lens'][sample_id])
+            batch[3].append(data['question_lens'][sample_id])
+
+            if 'answer_start_ids' in data:
+                batch[4].append(data['answer_start_ids'][sample_id])
+                batch[5].append(data['answer_end_ids'][sample_id])
+
         return batch
 
     def _add_paddings(self, batch):
@@ -232,16 +244,16 @@ class QAModel(object):
 
         with tf.variable_scope('preprocessing'):
             # preprocess contexts
-            fw_context_cell = tf.nn.rnn_cell.LSTMCell(num_units=self.params.state_size)
-            bw_context_cell = tf.nn.rnn_cell.LSTMCell(num_units=self.params.state_size)
+            fw_context_cell = tf.nn.rnn_cell.GRUCell(num_units=self.params.state_size)
+            bw_context_cell = tf.nn.rnn_cell.GRUCell(num_units=self.params.state_size)
             contexts, _ = tf.nn.bidirectional_dynamic_rnn(
                 fw_context_cell, bw_context_cell, contexts, sequence_length=self.context_lens,
                 dtype=tf.float32, scope='context/bidirectional_rnn')
             contexts = tf.concat(contexts, axis=-1)
 
             # preprocess questions
-            fw_question_cell = tf.nn.rnn_cell.LSTMCell(num_units=self.params.state_size)
-            bw_question_cell = tf.nn.rnn_cell.LSTMCell(num_units=self.params.state_size)
+            fw_question_cell = tf.nn.rnn_cell.GRUCell(num_units=self.params.state_size)
+            bw_question_cell = tf.nn.rnn_cell.GRUCell(num_units=self.params.state_size)
             questions, _ = tf.nn.bidirectional_dynamic_rnn(
                 fw_question_cell, bw_question_cell, questions, sequence_length=self.question_lens,
                 dtype=tf.float32, scope='question/bidirectional_rnn')
@@ -254,13 +266,13 @@ class QAModel(object):
                 memory_sequence_length=self.question_lens)
 
             # forward decoder
-            fw_decoder_cell = tf.nn.rnn_cell.LSTMCell(num_units=self.params.state_size)
+            fw_decoder_cell = tf.nn.rnn_cell.GRUCell(num_units=self.params.state_size)
             fw_decoder_cell = tf.contrib.seq2seq.AttentionWrapper(
                 cell=fw_decoder_cell, attention_mechanism=attention_mechanism,
                 output_attention=False)
 
             # backward decoder
-            bw_decoder_cell = tf.nn.rnn_cell.LSTMCell(num_units=self.params.state_size)
+            bw_decoder_cell = tf.nn.rnn_cell.GRUCell(num_units=self.params.state_size)
             bw_decoder_cell = tf.contrib.seq2seq.AttentionWrapper(
                 cell=bw_decoder_cell, attention_mechanism=attention_mechanism,
                 output_attention=False)
@@ -277,7 +289,7 @@ class QAModel(object):
             answer_attention = tf.contrib.seq2seq.BahdanauAttention(
                 num_units=self.params.state_size, memory=contexts,
                 memory_sequence_length=self.context_lens)
-            answer_decoder_cell = tf.nn.rnn_cell.LSTMCell(num_units=self.params.state_size)
+            answer_decoder_cell = tf.nn.rnn_cell.GRUCell(num_units=self.params.state_size)
             cell_input_fn = lambda input_, attention: attention  # ignore the inputs
             answer_decoder_cell = tf.contrib.seq2seq.AttentionWrapper(
                 cell=answer_decoder_cell, attention_mechanism=answer_attention,
@@ -300,6 +312,9 @@ class QAModel(object):
             grads, _ = list(zip(*grads_and_vars))
             self.train_op = optimizer.apply_gradients(grads_and_vars)
             self.grad_norm = tf.global_norm(grads)
+            self.grad2norm = {}
+            for grad, var in grads_and_vars:
+                self.grad2norm[var.name] = tf.norm(grad)
 
         with tf.variable_scope('prediction'):
             self.start_probabilities = tf.gather(self.probabilities, 0)

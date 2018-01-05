@@ -43,7 +43,7 @@ FLAGS = tf.app.flags.FLAGS
 
 def load_data(data_dir, sample_num=None):
     data = {}
-    prefixes = ['train', 'val']
+    prefixes = ['train', 'dev']
     fields = ['ids.context', 'ids.question', 'span']
 
     for prefix in prefixes:
@@ -54,7 +54,14 @@ def load_data(data_dir, sample_num=None):
                 for line in file_:
                     if sample_num and len(data[prefix][field]) >= sample_num:
                         break
-                    vals = [int(val) for val in line.strip().split()]
+
+                    if prefix == 'dev' and field == 'span':
+                        vals = []
+                        for span in line.strip().split('\t'):
+                            vals.append([int(val) for val in span.split()])
+                    else:
+                        vals = [int(val) for val in line.strip().split()]
+
                     data[prefix][field].append(vals)
 
     return data
@@ -78,28 +85,37 @@ def filter_data(data, max_context_len, max_question_len):
     return data
 
 
-def preprocess_data(data, max_context_len=None, max_question_len=None):
+def preprocess_data(data, mode, max_context_len=None, max_question_len=None):
     if max_context_len or max_question_len:
         data = filter_data(data, max_context_len, max_question_len)
     context_lens = [len(context) for context in data['ids.context']]
     question_lens = [len(question) for question in data['ids.question']]
-    answer_start_ids, answer_end_ids = zip(*data['span'])
-    data = {
-        'contexts': data['ids.context'],
-        'questions': data['ids.question'],
-        'context_lens': context_lens,
-        'question_lens': question_lens,
-        'answer_start_ids': answer_start_ids,
-        'answer_end_ids': answer_end_ids,
-    }
-    return data
+
+    if mode == 'train':
+        answer_start_ids, answer_end_ids = zip(*data['span'])
+        return {
+            'contexts': data['ids.context'],
+            'questions': data['ids.question'],
+            'context_lens': context_lens,
+            'question_lens': question_lens,
+            'answer_start_ids': answer_start_ids,
+            'answer_end_ids': answer_end_ids,
+        }
+    else:
+        return {
+            'contexts': data['ids.context'],
+            'questions': data['ids.question'],
+            'context_lens': context_lens,
+            'question_lens': question_lens,
+            'spans': data['span'],
+        }
 
 
 def main(_):
     data = load_data(FLAGS.data_dir)
-    train_data = preprocess_data(data['train'], max_context_len=FLAGS.max_context_len,
+    train_data = preprocess_data(data['train'], 'train', max_context_len=FLAGS.max_context_len, 
                                  max_question_len=FLAGS.max_question_len)
-    valid_data = preprocess_data(data['val'])
+    valid_data = preprocess_data(data['dev'], 'dev')
     hyper_parameters = HParams(learning_rate=FLAGS.learning_rate, state_size=FLAGS.state_size,
                                embed_path=FLAGS.embed_path, large_value=FLAGS.large_value)
     qa_model = QAModel(hyper_parameters)

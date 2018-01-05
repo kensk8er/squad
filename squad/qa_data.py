@@ -146,14 +146,14 @@ if __name__ == '__main__':
     vocab_path = pjoin(args.vocab_dir, "vocab.dat")
 
     train_path = pjoin(args.source_dir, "train")
-    valid_path = pjoin(args.source_dir, "val")
+    # valid_path = pjoin(args.source_dir, "val")
     dev_path = pjoin(args.source_dir, "dev")
 
     create_vocabulary(vocab_path,
                       [pjoin(args.source_dir, "train.context"),
                        pjoin(args.source_dir, "train.question"),
-                       pjoin(args.source_dir, "val.context"),
-                       pjoin(args.source_dir, "val.question")])
+                       pjoin(args.source_dir, "dev.context"),
+                       pjoin(args.source_dir, "dev.question")])
     vocab, rev_vocab = initialize_vocabulary(pjoin(args.vocab_dir, "vocab.dat"))
 
     # ======== Trim Distributed Word Representation =======
@@ -165,14 +165,14 @@ if __name__ == '__main__':
     # ======== Creating Dataset =========
     # We created our data files seperately
     # If your model loads data differently (like in bulk)
-    # You should change the below code
+    # You should change the below c
 
     x_train_dis_path = train_path + ".ids.context"
     y_train_ids_path = train_path + ".ids.question"
     data_to_token_ids(train_path + ".context", x_train_dis_path, vocab_path)
     data_to_token_ids(train_path + ".question", y_train_ids_path, vocab_path)
 
-    x_dis_path = valid_path + ".ids.context"
-    y_ids_path = valid_path + ".ids.question"
-    data_to_token_ids(valid_path + ".context", x_dis_path, vocab_path)
-    data_to_token_ids(valid_path + ".question", y_ids_path, vocab_path)
+    x_dis_path = dev_path + ".ids.context"
+    y_ids_path = dev_path + ".ids.question"
+    data_to_token_ids(dev_path + ".context", x_dis_path, vocab_path)
+    data_to_token_ids(dev_path + ".question", y_ids_path, vocab_path)
