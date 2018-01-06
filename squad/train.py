@@ -7,7 +7,7 @@ import logging
 
 import tensorflow as tf
 
-from squad.model import QAModel, HParams
+from squad.model import HParams, BiLstmModel, LuongAttention
 
 __author__ = 'Kensuke Muraki'
 
@@ -118,7 +118,7 @@ def main(_):
     valid_data = preprocess_data(data['dev'], 'dev')
     hyper_parameters = HParams(learning_rate=FLAGS.learning_rate, state_size=FLAGS.state_size,
                                embed_path=FLAGS.embed_path, large_value=FLAGS.large_value)
-    qa_model = QAModel(hyper_parameters)
+    qa_model = LuongAttention(hyper_parameters)
     qa_model.fit(
         train_data, valid_data, train_dir=FLAGS.train_dir, epochs=FLAGS.epochs,
         batch_size=FLAGS.batch_size)
