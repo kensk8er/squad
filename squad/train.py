@@ -7,7 +7,7 @@ import logging
 
 import tensorflow as tf
 
-from squad.model import HParams, BiLstmModel, LuongAttention
+from squad.model import HParams, BiLstmModel, LuongAttention, MatchLstmAnswerPointerModel
 
 __author__ = 'Kensuke Muraki'
 
@@ -37,6 +37,7 @@ tf.app.flags.DEFINE_integer(
     "large_value", 100,
     "Some large value to add to logits for padded inputs such that we can compute the "
     "probabilities near accurately.")
+tf.app.flags.DEFINE_string("architecture", "Luong", "Architecture of the model to train.")
 
 FLAGS = tf.app.flags.FLAGS
 
@@ -117,8 +118,14 @@ def main(_):
                                  max_question_len=FLAGS.max_question_len)
     valid_data = preprocess_data(data['dev'], 'dev')
     hyper_parameters = HParams(learning_rate=FLAGS.learning_rate, state_size=FLAGS.state_size,
-                               embed_path=FLAGS.embed_path, large_value=FLAGS.large_value)
-    qa_model = LuongAttention(hyper_parameters)
+                               embed_path=FLAGS.embed_path)
+
+    architectures = {
+        'Luong': LuongAttention,
+        'BiLSTM': BiLstmModel,
+        'Match': MatchLstmAnswerPointerModel,
+    }
+    qa_model = architectures[FLAGS.architecture](hyper_parameters)
     qa_model.fit(
         train_data, valid_data, train_dir=FLAGS.train_dir, epochs=FLAGS.epochs,
         batch_size=FLAGS.batch_size)
