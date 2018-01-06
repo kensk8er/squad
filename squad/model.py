@@ -5,6 +5,7 @@ import logging
 import os
 from copy import copy
 from random import shuffle
+from math import ceil
 
 import numpy as np
 import tensorflow as tf
@@ -34,7 +35,6 @@ class BaseQAModel(object):
 
     def fit(self, train_data, valid_data, train_dir, batch_size=10, epochs=10):
         sample_num = len(train_data['contexts'])
-        sample_ids = range(len(train_data['contexts']))
         best_f1 = 0.
 
         with tf.Session(graph=self.graph) as session:
@@ -43,10 +43,9 @@ class BaseQAModel(object):
                 os.path.join(train_dir, 'tensorboard.log'), session.graph)
 
             for epoch_id in range(epochs):
-                shuffle(sample_ids)
                 _LOGGER.info('--- Start epoch_id={} ---'.format(epoch_id))
                 train_loss, train_start_accuracy, train_end_accuracy = self._train_epoch(
-                    train_data, batch_size, sample_ids, sample_num, session)
+                    train_data, batch_size, sample_num, session)
 
                 _LOGGER.info('Finished training epoch_id={}.\n'.format(epoch_id))
                 _LOGGER.info('Train stats: loss={}, start_accuracy={}, end_accuracy={}\n'.format(
@@ -87,16 +86,16 @@ class BaseQAModel(object):
 
     def _validate(self, valid_data, batch_size, session):
         sample_num = len(valid_data['contexts'])
-        batch_num = sample_num // batch_size
-        sample_ids = range(sample_num)
+        batch_num = int(ceil(float(sample_num) / batch_size))
         exact_matches = []
         f1s = []
 
         for batch_id in range(batch_num):
-            batch_sample_ids = sample_ids[batch_id * batch_size: (batch_id + 1) * batch_size]
-            batch = self._get_batch(batch_sample_ids, valid_data)
+            sample_start_id = batch_id * batch_size
+            sample_end_id = min((sample_start_id + batch_size, sample_num))
+            batch = self._get_batch(range(sample_start_id, sample_end_id), valid_data)
             batch = self._add_paddings(batch)
-            answer_tuples = valid_data['spans'][batch_id * batch_size: (batch_id + 1) * batch_size]
+            answer_tuples = valid_data['spans'][sample_start_id: sample_end_id]
 
             start_probabilities, end_probabilities = session.run(
                 [self.start_probabilities, self.end_probabilities],
@@ -104,10 +103,10 @@ class BaseQAModel(object):
                            self.context_lens: batch[2], self.question_lens: batch[3]})
 
             predictions = self.search(start_probabilities, end_probabilities)
-            exact_match, f1 = self.compute_metrics(predictions, answer_tuples)
+            batch_exact_matches, batch_f1s = self.compute_metrics(predictions, answer_tuples)
 
-            exact_matches.append(exact_match)
-            f1s.append(f1)
+            exact_matches.extend(batch_exact_matches)
+            f1s.extend(batch_f1s)
 
         return np.mean(exact_matches), np.mean(f1s)
 
@@ -147,16 +146,20 @@ class BaseQAModel(object):
             exact_matches.append(best_exact_match)
             f1s.append(best_f1)
 
-        return np.mean(exact_matches), np.mean(f1s)
+        return exact_matches, f1s
 
-    def _train_epoch(self, train_data, batch_size, sample_ids, sample_num, session):
+    def _train_epoch(self, train_data, batch_size, sample_num, session):
         losses = []
         start_accuracies = []
         end_accuracies = []
-        batch_num = sample_num // batch_size
+        batch_num = int(ceil(float(sample_num) / batch_size))
+        sample_ids = range(sample_num)
+        shuffle(sample_ids)
 
         for batch_id in range(batch_num):
-            batch_sample_ids = sample_ids[batch_id * batch_size: (batch_id + 1) * batch_size]
+            sample_start_id = batch_id * batch_size
+            sample_end_id = min((sample_start_id + batch_size, sample_num))
+            batch_sample_ids = sample_ids[sample_start_id: sample_end_id]
             batch = self._get_batch(batch_sample_ids, train_data)
             batch = self._add_paddings(batch)
 
