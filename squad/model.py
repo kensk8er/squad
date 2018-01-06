@@ -96,6 +96,7 @@ class BaseQAModel(object):
             batch_sample_ids = sample_ids[batch_id * batch_size: (batch_id + 1) * batch_size]
             batch = self._get_batch(batch_sample_ids, valid_data)
             batch = self._add_paddings(batch)
+            answer_tuples = valid_data['spans'][batch_id * batch_size: (batch_id + 1) * batch_size]
 
             start_probabilities, end_probabilities = session.run(
                 [self.start_probabilities, self.end_probabilities],
@@ -103,7 +104,7 @@ class BaseQAModel(object):
                            self.context_lens: batch[2], self.question_lens: batch[3]})
 
             predictions = self.search(start_probabilities, end_probabilities)
-            exact_match, f1 = self.compute_metrics(predictions, valid_data['spans'])
+            exact_match, f1 = self.compute_metrics(predictions, answer_tuples)
 
             exact_matches.append(exact_match)
             f1s.append(f1)
@@ -204,7 +205,7 @@ class BaseQAModel(object):
         return batch
 
     def search(self, start_probabilities, end_probabilities, max_span=15):
-        context_len = len(start_probabilities)
+        context_len = start_probabilities.shape[1]
         predictions = []
 
         for sample_id in range(context_len):
