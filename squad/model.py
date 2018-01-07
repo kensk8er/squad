@@ -41,20 +41,32 @@ class BaseQAModel(object):
             _LOGGER.info('The number of parameters = {:,}'.format(
                 int(np.sum([np.prod(v.shape) for v in tf.trainable_variables()]))))
 
-    def fit(self, train_data, valid_data, train_dir, batch_size=10, epochs=10):
-        # record hyper-parameters
-        self.params.dump(
-            path=os.path.join(train_dir, 'params.json'), class_name=self.__class__.__name__)
+    def fit(self, train_data, valid_data, train_dir, batch_size=10, epochs=10, resume=False):
+        if not resume:
+            # record hyper-parameters
+            self.params.dump(
+                path=os.path.join(train_dir, 'params.json'), class_name=self.__class__.__name__)
 
         sample_num = len(train_data['contexts'])
         best_f1 = 0.
+        model_path = os.path.join(train_dir, 'model.ckpt')
 
         with tf.Session(graph=self.graph) as session:
-            session.run(tf.global_variables_initializer())
+            if resume:
+                latest_checkpoint_path = tf.train.latest_checkpoint(train_dir)
+                self.saver.restore(session, latest_checkpoint_path)
+                start_epoch_id = int(latest_checkpoint_path.split('/')[-1].split('-')[-1]) + 1
+            else:
+                session.run(tf.global_variables_initializer())
+                start_epoch_id = 0
+
             summary_writer = tf.summary.FileWriter(
                 os.path.join(train_dir, 'tensorboard.log'), session.graph)
 
             for epoch_id in range(epochs):
+                if epoch_id < start_epoch_id:
+                    continue
+
                 _LOGGER.info('--- Start epoch_id={} ---'.format(epoch_id))
                 train_loss, train_start_accuracy, train_end_accuracy = self._train_epoch(
                     train_data, batch_size, sample_num, session)
@@ -76,7 +88,7 @@ class BaseQAModel(object):
                 if valid_f1 > best_f1:
                     best_f1 = valid_f1
                     _LOGGER.info('Achieved the best f1 score so far. Saving the model...')
-                    self.saver.save(session, os.path.join(train_dir, 'model.ckpt'))
+                    self.saver.save(session, save_path=model_path, global_step=epoch_id)
 
     def _add_summary(self, epoch_id, session, summary_writer, train_end_accuracy, train_loss,
                      train_start_accuracy, valid_exact_match, valid_f1):

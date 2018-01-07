@@ -36,6 +36,7 @@ tf.app.flags.DEFINE_integer(
     "Maximum question length in training (filter out examples with higher question length)")
 tf.app.flags.DEFINE_integer("max_span", 20, "Maximum span length to search.")
 tf.app.flags.DEFINE_string("architecture", "Luong", "Architecture of the model to train.")
+tf.app.flags.DEFINE_bool("resume", False, "If True, resume a training from the checkpoint saved.")
 
 FLAGS = tf.app.flags.FLAGS
 
@@ -127,7 +128,7 @@ def main(_):
     qa_model = architectures[FLAGS.architecture](hyper_parameters)
     qa_model.fit(
         train_data, valid_data, train_dir=FLAGS.train_dir, epochs=FLAGS.epochs,
-        batch_size=FLAGS.batch_size)
+        batch_size=FLAGS.batch_size, resume=FLAGS.resume)
 
 
 if __name__ == '__main__':
