@@ -1,6 +1,7 @@
 # -*- coding: UTF-8 -*-
 """Define QA models here.
 """
+import json
 import logging
 import os
 from copy import copy
@@ -22,6 +23,13 @@ class HParams(object):
         for key, val in kwargs.items():
             setattr(self, key, val)
 
+    def dump(self, path, class_name=None):
+        params = self.__dict__
+        if class_name:
+            params['class_name'] = class_name
+        with open(path, 'w') as json_file:
+            json_file.write(json.dumps(params))
+
 
 class BaseQAModel(object):
 
@@ -34,6 +42,10 @@ class BaseQAModel(object):
                 int(np.sum([np.prod(v.shape) for v in tf.trainable_variables()]))))
 
     def fit(self, train_data, valid_data, train_dir, batch_size=10, epochs=10):
+        # record hyper-parameters
+        self.params.dump(
+            path=os.path.join(train_dir, 'params.json'), class_name=self.__class__.__name__)
+
         sample_num = len(train_data['contexts'])
         best_f1 = 0.
 
