@@ -209,7 +209,7 @@ class BaseQAModel(object):
             batch[data_id] = data
         return batch
 
-    def search(self, start_probabilities, end_probabilities, max_span=15):
+    def search(self, start_probabilities, end_probabilities):
         context_len = start_probabilities.shape[1]
         predictions = []
 
@@ -221,7 +221,7 @@ class BaseQAModel(object):
             max_end_id = None
 
             for start_id in range(context_len):
-                for end_id in range(start_id, min(context_len, start_id + max_span)):
+                for end_id in range(start_id, min(context_len, start_id + self.params.max_span)):
                     proba = multiples[start_id, end_id]
                     if proba > max_proba:
                         max_proba = proba

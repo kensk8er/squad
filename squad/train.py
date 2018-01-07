@@ -38,6 +38,7 @@ tf.app.flags.DEFINE_integer(
     "large_value", 100,
     "Some large value to add to logits for padded inputs such that we can compute the "
     "probabilities near accurately.")
+tf.app.flags.DEFINE_integer("max_span", 20, "Maximum span length to search.")
 tf.app.flags.DEFINE_string("architecture", "Luong", "Architecture of the model to train.")
 
 FLAGS = tf.app.flags.FLAGS
@@ -119,7 +120,8 @@ def main(_):
                                  max_question_len=FLAGS.max_question_len)
     valid_data = preprocess_data(data['dev'], 'dev')
     hyper_parameters = HParams(learning_rate=FLAGS.learning_rate, state_size=FLAGS.state_size,
-                               embed_path=FLAGS.embed_path)
+                               embed_path=FLAGS.embed_path, dropout=FLAGS.dropout,
+                               max_span=FLAGS.max_span)
 
     architectures = {
         'Luong': LuongAttention,
