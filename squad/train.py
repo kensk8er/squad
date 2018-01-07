@@ -12,6 +12,7 @@ from squad.model import HParams, BiLstmModel, LuongAttention, MatchLstmAnswerPoi
 __author__ = 'Kensuke Muraki'
 
 tf.app.flags.DEFINE_float("learning_rate", 0.001, "Learning rate.")
+tf.app.flags.DEFINE_float("dropout", 0.75, "Dropout keep probability rate.")
 tf.app.flags.DEFINE_integer("batch_size", 32, "Batch size to use during training.")
 tf.app.flags.DEFINE_integer("epochs", 10, "Number of epochs to train.")
 tf.app.flags.DEFINE_integer("state_size", 128, "Size of each model layer.")

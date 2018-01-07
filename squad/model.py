@@ -100,7 +100,8 @@ class BaseQAModel(object):
             start_probabilities, end_probabilities = session.run(
                 [self.start_probabilities, self.end_probabilities],
                 feed_dict={self.contexts: batch[0], self.questions: batch[1],
-                           self.context_lens: batch[2], self.question_lens: batch[3]})
+                           self.context_lens: batch[2], self.question_lens: batch[3],
+                           self.dropout: 1.})
 
             predictions = self.search(start_probabilities, end_probabilities)
             batch_exact_matches, batch_f1s = self.compute_metrics(predictions, answer_tuples)
@@ -168,7 +169,8 @@ class BaseQAModel(object):
                  self.grad2norm],
                 feed_dict={self.contexts: batch[0], self.questions: batch[1],
                            self.context_lens: batch[2], self.question_lens: batch[3],
-                           self.answer_start_ids: batch[4], self.answer_end_ids: batch[5]})
+                           self.answer_start_ids: batch[4], self.answer_end_ids: batch[5],
+                           self.dropout: self.params.dropout})
 
             _LOGGER.info('Processed batch {}/{}, loss={}, grad_norm={}'.format(
                 batch_id + 1, batch_num, loss, grad_norm))
@@ -246,6 +248,7 @@ class MatchLstmAnswerPointerModel(BaseQAModel):
                 dtype=tf.int32, shape=(None,), name='answer_start_ids')
             self.answer_end_ids = tf.placeholder(
                 dtype=tf.int32, shape=(None,), name='answer_end_ids')
+            self.dropout = tf.placeholder(tf.float32, shape=(), name='dropout')
 
         with tf.variable_scope('embedding'):
             self.embeddings = tf.Variable(
@@ -357,6 +360,7 @@ class BiLstmModel(BaseQAModel):
                 dtype=tf.int32, shape=(None,), name='answer_start_ids')
             self.answer_end_ids = tf.placeholder(
                 dtype=tf.int32, shape=(None,), name='answer_end_ids')
+            self.dropout = tf.placeholder(tf.float32, shape=(), name='dropout')
 
         with tf.variable_scope('embedding'):
             self.embeddings = tf.Variable(
@@ -488,6 +492,7 @@ class LuongAttention(BaseQAModel):
                 dtype=tf.int32, shape=(None,), name='answer_start_ids')
             self.answer_end_ids = tf.placeholder(
                 dtype=tf.int32, shape=(None,), name='answer_end_ids')
+            self.dropout = tf.placeholder(tf.float32, shape=(), name='dropout')
 
         with tf.variable_scope('embedding'):
             self.embeddings = tf.Variable(
@@ -498,7 +503,11 @@ class LuongAttention(BaseQAModel):
         with tf.variable_scope('encoder'):
             # preprocess questions
             fw_question_cell = tf.nn.rnn_cell.GRUCell(num_units=self.params.state_size)
+            fw_question_cell = tf.contrib.rnn.DropoutWrapper(
+                fw_question_cell, input_keep_prob=self.dropout)
             bw_question_cell = tf.nn.rnn_cell.GRUCell(num_units=self.params.state_size)
+            bw_question_cell = tf.contrib.rnn.DropoutWrapper(
+                bw_question_cell, input_keep_prob=self.dropout)
             questions, (question_state_fw, question_state_bw) = tf.nn.bidirectional_dynamic_rnn(
                 fw_question_cell, bw_question_cell, questions, sequence_length=self.question_lens,
                 dtype=tf.float32, scope='question/bidirectional_rnn')
@@ -506,7 +515,11 @@ class LuongAttention(BaseQAModel):
 
             # preprocess contexts
             fw_context_cell = tf.nn.rnn_cell.GRUCell(num_units=self.params.state_size)
+            fw_context_cell = tf.contrib.rnn.DropoutWrapper(
+                fw_context_cell, input_keep_prob=self.dropout)
             bw_context_cell = tf.nn.rnn_cell.GRUCell(num_units=self.params.state_size)
+            bw_context_cell = tf.contrib.rnn.DropoutWrapper(
+                bw_context_cell, input_keep_prob=self.dropout)
             contexts, _ = tf.nn.bidirectional_dynamic_rnn(
                 fw_context_cell, bw_context_cell, contexts, initial_state_fw=question_state_fw,
                 initial_state_bw=question_state_bw, sequence_length=self.context_lens,
@@ -541,6 +554,7 @@ class LuongAttention(BaseQAModel):
             alignment_weights = tf.nn.softmax(alignment_scores)
             context_aware = tf.matmul(alignment_weights, questions)
             concat_hidden = tf.concat((context_aware, contexts), axis=2)
+            concat_hidden = tf.nn.dropout(concat_hidden, keep_prob=self.dropout)
 
             W_attention = tf.get_variable(
                 'W_attention', shape=(self.params.state_size * 4, self.params.state_size * 2),
@@ -552,7 +566,11 @@ class LuongAttention(BaseQAModel):
 
         with tf.variable_scope('decoder1'):
             decode1_fw_cell = tf.nn.rnn_cell.GRUCell(num_units=self.params.state_size)
+            decode1_fw_cell = tf.contrib.rnn.DropoutWrapper(
+                decode1_fw_cell, input_keep_prob=self.dropout)
             decode1_bw_cell = tf.nn.rnn_cell.GRUCell(num_units=self.params.state_size)
+            decode1_bw_cell = tf.contrib.rnn.DropoutWrapper(
+                decode1_bw_cell, input_keep_prob=self.dropout)
             activations1, _ = tf.nn.bidirectional_dynamic_rnn(
                 decode1_fw_cell, decode1_bw_cell, attentions, sequence_length=self.context_lens,
                 dtype=tf.float32, scope='decoder1/bidirectional_rnn')
@@ -560,7 +578,11 @@ class LuongAttention(BaseQAModel):
 
         with tf.variable_scope('decoder2'):
             decode2_fw_cell = tf.nn.rnn_cell.GRUCell(num_units=self.params.state_size)
+            decode2_fw_cell = tf.contrib.rnn.DropoutWrapper(
+                decode2_fw_cell, input_keep_prob=self.dropout)
             decode2_bw_cell = tf.nn.rnn_cell.GRUCell(num_units=self.params.state_size)
+            decode2_bw_cell = tf.contrib.rnn.DropoutWrapper(
+                decode2_bw_cell, input_keep_prob=self.dropout)
             activations2, _ = tf.nn.bidirectional_dynamic_rnn(
                 decode2_fw_cell, decode2_bw_cell, activations1, sequence_length=self.context_lens,
                 dtype=tf.float32, scope='decoder2/bidirectional_rnn')
