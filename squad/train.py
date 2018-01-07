@@ -11,7 +11,7 @@ from squad.model import HParams, BiLstmModel, LuongAttention, MatchLstmAnswerPoi
 
 __author__ = 'Kensuke Muraki'
 
-tf.app.flags.DEFINE_float("learning_rate", 0.001, "Learning rate.")
+tf.app.flags.DEFINE_float("learning_rate", 0.005, "Learning rate.")
 tf.app.flags.DEFINE_float("dropout", 0.75, "Dropout keep probability rate.")
 tf.app.flags.DEFINE_integer("batch_size", 32, "Batch size to use during training.")
 tf.app.flags.DEFINE_integer("epochs", 10, "Number of epochs to train.")
@@ -29,15 +29,11 @@ tf.app.flags.DEFINE_string(
 tf.app.flags.DEFINE_string(
     "embed_path", "data/squad/glove.trimmed.100.npz", "Path to the trimmed GLoVe embedding")
 tf.app.flags.DEFINE_integer(
-    "max_context_len", 300,
+    "max_context_len", 400,
     "Maximum context length in training (filter out examples with higher context length)")
 tf.app.flags.DEFINE_integer(
     "max_question_len", 25,
     "Maximum question length in training (filter out examples with higher question length)")
-tf.app.flags.DEFINE_integer(
-    "large_value", 100,
-    "Some large value to add to logits for padded inputs such that we can compute the "
-    "probabilities near accurately.")
 tf.app.flags.DEFINE_integer("max_span", 20, "Maximum span length to search.")
 tf.app.flags.DEFINE_string("architecture", "Luong", "Architecture of the model to train.")
 
