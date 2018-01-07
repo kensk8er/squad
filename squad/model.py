@@ -507,10 +507,18 @@ class LuongAttention(BaseQAModel):
             self.dropout = tf.placeholder(tf.float32, shape=(), name='dropout')
 
         with tf.variable_scope('embedding'):
-            self.embeddings = tf.Variable(
-                np.load(self.params.embed_path)['glove'], trainable=False, name='embeddings')
-            contexts = tf.cast(tf.nn.embedding_lookup(self.embeddings, self.contexts), tf.float32)
-            questions = tf.cast(tf.nn.embedding_lookup(self.embeddings, self.questions), tf.float32)
+            self.pretrained_embeddings = tf.Variable(
+                np.load(self.params.embed_path)['glove'], trainable=False, dtype=tf.float32,
+                name='pretrained_embeddings')
+            self.trainable_embeddings = tf.Variable(
+                np.load(self.params.embed_path)['glove'], trainable=True, dtype=tf.float32,
+                name='trainable_embeddings')
+            contexts = tf.concat(
+                (tf.nn.embedding_lookup(self.pretrained_embeddings, self.contexts),
+                tf.nn.embedding_lookup(self.trainable_embeddings, self.contexts)), axis=-1)
+            questions = tf.concat(
+                (tf.nn.embedding_lookup(self.pretrained_embeddings, self.questions),
+                 tf.nn.embedding_lookup(self.trainable_embeddings, self.questions)), axis=-1)
 
         with tf.variable_scope('encoder'):
             # preprocess questions
