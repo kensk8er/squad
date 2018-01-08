@@ -527,11 +527,7 @@ class LuongAttention(BaseQAModel):
         with tf.variable_scope('encoder'):
             # preprocess questions
             fw_question_cell = tf.nn.rnn_cell.GRUCell(num_units=self.params.state_size)
-            fw_question_cell = tf.contrib.rnn.DropoutWrapper(
-                fw_question_cell, input_keep_prob=self.dropout)
             bw_question_cell = tf.nn.rnn_cell.GRUCell(num_units=self.params.state_size)
-            bw_question_cell = tf.contrib.rnn.DropoutWrapper(
-                bw_question_cell, input_keep_prob=self.dropout)
             questions, (question_state_fw, question_state_bw) = tf.nn.bidirectional_dynamic_rnn(
                 fw_question_cell, bw_question_cell, questions, sequence_length=self.question_lens,
                 dtype=tf.float32, scope='question/bidirectional_rnn')
@@ -539,11 +535,7 @@ class LuongAttention(BaseQAModel):
 
             # preprocess contexts
             fw_context_cell = tf.nn.rnn_cell.GRUCell(num_units=self.params.state_size)
-            fw_context_cell = tf.contrib.rnn.DropoutWrapper(
-                fw_context_cell, input_keep_prob=self.dropout)
             bw_context_cell = tf.nn.rnn_cell.GRUCell(num_units=self.params.state_size)
-            bw_context_cell = tf.contrib.rnn.DropoutWrapper(
-                bw_context_cell, input_keep_prob=self.dropout)
             contexts, _ = tf.nn.bidirectional_dynamic_rnn(
                 fw_context_cell, bw_context_cell, contexts, initial_state_fw=question_state_fw,
                 initial_state_bw=question_state_bw, sequence_length=self.context_lens,
@@ -578,7 +570,6 @@ class LuongAttention(BaseQAModel):
             alignment_weights = tf.nn.softmax(alignment_scores)
             context_aware = tf.matmul(alignment_weights, questions)
             concat_hidden = tf.concat((context_aware, contexts), axis=2)
-            concat_hidden = tf.nn.dropout(concat_hidden, keep_prob=self.dropout)
 
             W_attention = tf.get_variable(
                 'W_attention', shape=(self.params.state_size * 4, self.params.state_size * 2),
