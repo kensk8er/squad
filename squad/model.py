@@ -565,7 +565,7 @@ class LuongAttention(BaseQAModel):
                 tf.tile(tf.expand_dims(question_mask, 1), [1, max_context_len, 1]))
             alignment_scores = tf.where(
                 tf.cast(alignment_mask, tf.bool), alignment_scores,
-                tf.multiply(tf.subtract(tf.ones(tf.shape(alignment_mask)), alignment_scores), -1e9))
+                tf.multiply(tf.subtract(tf.ones(tf.shape(alignment_mask)), alignment_mask), -1e9))
 
             alignment_weights = tf.nn.softmax(alignment_scores)
             context_aware = tf.matmul(alignment_weights, questions)
@@ -612,7 +612,7 @@ class LuongAttention(BaseQAModel):
             start_logits = tf.squeeze(start_logits, axis=-1)
             start_logits = tf.where(
                 tf.cast(context_mask, tf.bool), start_logits,
-                tf.multiply(tf.subtract(tf.ones(tf.shape(context_mask)), start_logits), -1e9))
+                tf.multiply(tf.subtract(tf.ones(tf.shape(context_mask)), context_mask), -1e9))
 
             W_end = tf.get_variable('W_end', shape=(self.params.state_size * 2, 1),
                                     initializer=xavier_initializer(), dtype=tf.float32)
@@ -622,7 +622,7 @@ class LuongAttention(BaseQAModel):
             end_logits = tf.squeeze(end_logits, axis=-1)
             end_logits = tf.where(
                 tf.cast(context_mask, tf.bool), end_logits,
-                tf.multiply(tf.subtract(tf.ones(tf.shape(context_mask)), end_logits), -1e9))
+                tf.multiply(tf.subtract(tf.ones(tf.shape(context_mask)), context_mask), -1e9))
 
         with tf.variable_scope('loss'):
             start_loss = tf.losses.sparse_softmax_cross_entropy(self.answer_start_ids, start_logits)
