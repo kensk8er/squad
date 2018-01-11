@@ -633,9 +633,10 @@ class LuongAttention(BaseQAModel):
         with tf.variable_scope('optimizer'):
             optimizer = tf.train.AdamOptimizer(learning_rate=self.params.learning_rate)
             grads_and_vars = optimizer.compute_gradients(self.loss)
-            grads, _ = list(zip(*grads_and_vars))
+            grads, vars = zip(*grads_and_vars)
+            grads, self.grad_norm = tf.clip_by_global_norm(grads, self.params.max_grad_norm)
+            grads_and_vars = zip(grads, vars)
             self.train_op = optimizer.apply_gradients(grads_and_vars)
-            self.grad_norm = tf.global_norm(grads)
             self.grad2norm = {}
             for grad, var in grads_and_vars:
                 self.grad2norm[var.name] = tf.norm(grad)

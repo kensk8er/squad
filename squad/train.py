@@ -37,6 +37,7 @@ tf.app.flags.DEFINE_integer(
 tf.app.flags.DEFINE_integer("max_span", 20, "Maximum span length to search.")
 tf.app.flags.DEFINE_string("architecture", "Luong", "Architecture of the model to train.")
 tf.app.flags.DEFINE_bool("resume", False, "If True, resume a training from the checkpoint saved.")
+tf.app.flags.DEFINE_float("max_grad_norm", 10., "Maximum norm of to clip gradients")
 
 FLAGS = tf.app.flags.FLAGS
 
@@ -118,7 +119,7 @@ def main(_):
     valid_data = preprocess_data(data['dev'], 'dev')
     hyper_parameters = HParams(learning_rate=FLAGS.learning_rate, state_size=FLAGS.state_size,
                                embed_path=FLAGS.embed_path, dropout=FLAGS.dropout,
-                               max_span=FLAGS.max_span)
+                               max_span=FLAGS.max_span, max_grad_norm=FLAGS.max_grad_norm)
 
     architectures = {
         'Luong': LuongAttention,
