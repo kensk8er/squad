@@ -609,19 +609,20 @@ class LuongAttention(BaseQAModel):
             start_logits = tf.reshape(tf.matmul(tf.reshape(
                 activations2, (batch_size * max_context_len, -1)), W_start),
                 (batch_size, max_context_len, 1))
-            start_logits = tf.squeeze(start_logits, axis=-1)
-            start_logits = tf.where(
-                tf.cast(context_mask, tf.bool), start_logits,
+            start_logits_norm = tf.squeeze(start_logits, axis=-1)
+            start_logits_norm = tf.where(
+                tf.cast(context_mask, tf.bool), start_logits_norm,
                 tf.multiply(tf.subtract(tf.ones(tf.shape(context_mask)), context_mask), -1e9))
 
-            W_end = tf.get_variable('W_end', shape=(self.params.state_size * 2, 1),
+            W_end = tf.get_variable('W_end', shape=(self.params.state_size * 2 + 1, 1),
                                     initializer=xavier_initializer(), dtype=tf.float32)
+            activations3 = tf.concat((activations2, start_logits), axis=-1)
             end_logits = tf.reshape(tf.matmul(tf.reshape(
-                activations2, (batch_size * max_context_len, -1)), W_end),
+                activations3, (batch_size * max_context_len, -1)), W_end),
                 (batch_size, max_context_len, 1))
-            end_logits = tf.squeeze(end_logits, axis=-1)
-            end_logits = tf.where(
-                tf.cast(context_mask, tf.bool), end_logits,
+            end_logits_norm = tf.squeeze(end_logits, axis=-1)
+            end_logits_norm = tf.where(
+                tf.cast(context_mask, tf.bool), end_logits_norm,
                 tf.multiply(tf.subtract(tf.ones(tf.shape(context_mask)), context_mask), -1e9))
 
         with tf.variable_scope('loss'):
@@ -640,8 +641,8 @@ class LuongAttention(BaseQAModel):
                 self.grad2norm[var.name] = tf.norm(grad)
 
         with tf.variable_scope('prediction'):
-            self.start_probabilities = tf.nn.softmax(start_logits)
-            self.end_probabilities = tf.nn.softmax(end_logits)
+            self.start_probabilities = tf.nn.softmax(start_logits_norm)
+            self.end_probabilities = tf.nn.softmax(end_logits_norm)
             self.start_predictions = tf.cast(tf.argmax(self.start_probabilities, axis=1), tf.int32)
             self.end_predictions = tf.cast(tf.argmax(self.end_probabilities, axis=1), tf.int32)
             self.start_accuracy = tf.reduce_mean(
